@@ -1,0 +1,170 @@
+/* ******************************************************************************
+ * Copyright (c) 2019, 2020 BestSolution.at and others.
+ * All rights reserved. This program and the accompanying materials 
+ * are made available under the terms of the Eclipse Public License 2.0 
+ * which is available at http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ * 
+ * Contributors:
+ *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
+ * ******************************************************************************/
+plugins {
+  id 'cpp-library'
+  id 'maven-publish'
+  id 'visual-studio'
+  id 'xcode'
+}
+
+group = 'org.eclipse.fx.drift'
+version = Versioning.fullVersion
+
+model {
+  toolChains {
+    visualStudio(VisualCpp) {}
+    gcc(Gcc) {}
+    clang(Clang) {
+      eachPlatform {
+        cppCompiler.withArguments { args ->
+          args << '-arch'
+          args << 'x86_64'
+          args << '-arch'
+          args << 'arm64'
+        }
+        linker.withArguments { args ->
+          args << '-arch'
+          args << 'x86_64'
+          args << '-arch'
+          args << 'arm64'
+        }
+      }
+    }
+  }
+}
+
+library {
+
+ baseName = 'driftfx'
+
+    linkage = [ Linkage.SHARED ]
+    
+    targetMachines = [
+      machines.linux.x86_64,
+      machines.windows.x86_64,
+      machines.macOS.x86_64,
+    ]
+    
+    source.from createCppTree(project)
+
+    privateHeaders {
+    	from file('src/main/headers')
+    	from file(getJNIPlatformIncludeDir())
+    	from file(getJNIIncludeDir())
+
+      if (Os.isFamily(Os.FAMILY_MAC)) {
+        from file('src/main/headers-macos')
+      }
+    }
+    
+    binaries.configureEach { binary ->
+      println("configure Binary " + binary)
+      def compileTask = compileTask.get()
+      def linkTask = linkTask.get()
+      
+      configureToolchain(toolChain, compileTask, linkTask)
+      configureLinker(targetMachine, linkTask)
+//      addJNIIncludes(compileTask)
+      
+      if (targetMachine.operatingSystemFamily.windows) { 
+        compileTask.macros.put("DRIFTGL_WGL", null)
+      } else if (targetMachine.operatingSystemFamily.macOs) {
+        compileTask.macros.put("DRIFTGL_CGL", null)
+        compileTask.macros.put("GL_SILENCE_DEPRECATION", null)
+      } else if (targetMachine.operatingSystemFamily.linux) {
+        compileTask.macros.put("DRIFTGL_GLX", null)
+      }  
+    }
+    
+}
+
+import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.nativeplatform.platform.OperatingSystem
+import org.gradle.internal.jvm.Jvm
+
+def getJNIPlatformDir() {
+  if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+    'win32'
+  } else if (Os.isFamily(Os.FAMILY_MAC)) {
+    'darwin'
+  } else if (Os.isFamily(Os.FAMILY_UNIX)) {
+    'linux'
+  }
+}
+
+def getJNIIncludeDir() {
+        Jvm.current().javaHome.toPath().resolve('include')
+}
+def getJNIPlatformIncludeDir() {
+        getJNIIncludeDir().resolve(getJNIPlatformDir())
+}
+
+def createCppTree(proj) {
+  def tree = proj.fileTree('src')
+  if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+    tree.exclude '**/macos'
+    tree.exclude '**/linux'
+  } else if (Os.isFamily(Os.FAMILY_MAC)) {
+    tree.exclude '**/win32'
+    tree.exclude '**/linux'
+  } else if (Os.isFamily(Os.FAMILY_UNIX)) {
+    tree.exclude '**/win32'
+    tree.exclude '**/macos'
+  }
+  return tree
+}
+
+def configureToolchain(toolChain, compileTask, linkTask) {
+  if (toolChain in VisualCpp) {
+    println("configuring visual studio" + toolChain)
+    compileTask.compilerArgs.add '/std:c++14'
+    compileTask.compilerArgs.add '/EHsc'
+  }
+  if (toolChain in Gcc) {
+    println("configuring gcc" + toolChain)
+    compileTask.compilerArgs.add '-std=c++11'
+  }
+  if (toolChain in Clang) {
+    println("configuring clang " + toolChain)
+    compileTask.compilerArgs.add '-std=c++11'
+  }
+}
+
+def configureLinker(targetMachine, linkTask) {
+  if (targetMachine.operatingSystemFamily.windows) {
+    linkTask.linkerArgs.add("opengl32.lib")
+    linkTask.linkerArgs.add("d3d9.lib")
+    linkTask.linkerArgs.add("user32.lib")
+    linkTask.linkerArgs.add("gdi32.lib")
+  } else if (targetMachine.operatingSystemFamily.linux) {
+    linkTask.linkerArgs.add('-lX11')
+    linkTask.linkerArgs.add('-lGLX')
+  } else if (targetMachine.operatingSystemFamily.macOs) {
+
+    linkTask.linkerArgs.addAll('-install_name', '@rpath/libdriftfx.dylib')
+
+    linkTask.linkerArgs.addAll('-framework', 'OpenGL')
+    linkTask.linkerArgs.addAll('-framework', 'Cocoa')
+    linkTask.linkerArgs.addAll('-framework', 'IOSurface')
+    linkTask.linkerArgs.addAll('-framework', 'CoreFoundation')
+
+  }
+}
+
+
+publishing {
+    repositories {
+        maven {
+          url = "../native-repo"
+        }
+    }
+}

@@ -1,0 +1,710 @@
+/* ******************************************************************************
+ * Copyright (c) 2019, 2020 BestSolution.at and others.
+ * All rights reserved. This program and the accompanying materials 
+ * are made available under the terms of the Eclipse Public License 2.0 
+ * which is available at http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ * 
+ * Contributors:
+ *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
+ * ******************************************************************************/
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        
+        classpath 'org.apache.httpcomponents:httpclient:4.5.9'
+        classpath 'org.apache.httpcomponents:httpmime:4.5.9'
+
+
+        classpath 'org.standardout:bnd-platform:1.7.0'
+        classpath 'com.squareup.okhttp3:okhttp:4.8.0'
+    }
+
+}
+
+plugins {
+    id 'java'
+    id 'eclipse'
+    id 'maven-publish'
+    id 'visual-studio'
+}
+
+apply plugin: 'org.standardout.bnd-platform'
+apply from: 'versioning.gradle'
+
+version = "${Versioning.version}-SNAPSHOT"
+
+task showInfo {
+    doLast {
+        println "$version"
+        //println "Versioning: ${Versioning}"
+        println "Release Tag: ${getReleaseTag()}"
+        println "Version: ${getVersion()}"
+        println "Qualifier: ${getQualifier()}"
+        println "last commit: ${getGitTimestamp()}" 
+        println " -> ${toTimestamp(getGitTimestamp())}"
+    }
+}
+showInfo.group = "DriftFX"
+showInfo.description = "Outputs the version information used for building"
+
+allprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+
+}
+
+def isUseSignedArtifacts() {
+    project.hasProperty("useSignedArtifacts")
+}
+def getMultireleaseJarPath() {
+    isUseSignedArtifacts() ? "$buildDir/signed/org.eclipse.fx.drift.jar" : "$buildDir/libs/org.eclipse.fx.drift.jar"
+}
+
+def getJava8() {
+	"${System.getenv('JAVA_HOME_8')}/bin/javac"
+}
+
+def getJava11() {
+	"${System.getenv('JAVA_HOME_11')}/bin/javac"
+}
+
+
+subprojects.each { subproject -> evaluationDependsOn( subproject.path ) }
+
+task copyNativesMacos(type: Copy) {
+  from "native-repo/org/eclipse/fx/drift/driftfx_release_macos/$Versioning.fullVersion/driftfx_release_macos-${Versioning.fullVersion}.dylib"
+  into 'org.eclipse.fx.drift/src/main/resources/native'
+  rename { fileName -> fileName.replaceAll("driftfx_release_macos-.*[.]dylib", "libdriftfx.dylib") }
+}
+task copyNativesWindows(type: Copy) {
+  from "native-repo/org/eclipse/fx/drift/driftfx_release_windows/$Versioning.fullVersion/driftfx_release_windows-${Versioning.fullVersion}.dll"
+  into 'org.eclipse.fx.drift/src/main/resources/native'
+  rename { fileName -> fileName.replaceAll("driftfx_release_windows-.*[.]dll", "driftfx.dll") }
+}
+task copyNativesLinux(type: Copy) {
+  from "native-repo/org/eclipse/fx/drift/driftfx_release_linux/$Versioning.fullVersion/driftfx_release_linux-${Versioning.fullVersion}.so"
+  into 'org.eclipse.fx.drift/src/main/resources/native'
+  rename { fileName -> fileName.replaceAll("driftfx_release_linux-.*[.]so", "libdriftfx.so") }
+}
+
+task copyNatives {
+  group = "DriftFX"
+  description = "Copies the available natives from ./native-repo to ./org.eclipse.fx.drift/src/main/resources/native/"
+  dependsOn = [
+    copyNativesMacos,
+    copyNativesWindows,
+    copyNativesLinux
+  ]
+}
+
+
+task buildMultireleaseJar(type: Jar, dependsOn: [
+    copyNatives,
+    project(':org.eclipse.fx.drift').tasks['classes'],
+    project(':org.eclipse.fx.drift.java8').tasks['classes'],
+    project(':org.eclipse.fx.drift.java11').tasks['classes']
+]) {
+    archiveBaseName = 'org.eclipse.fx.drift'
+    archiveVersion = '' //"$fullVersion"
+
+    from( project(':org.eclipse.fx.drift').sourceSets.main.output ) {
+        exclude 'org/eclipse/fx/drift/DriftFXSurface.class'
+        exclude 'org/eclipse/fx/drift/internal/DriftUtil.class'
+    }
+    from project(':org.eclipse.fx.drift.java8').sourceSets.main.output
+
+    into('META-INF/versions/11') {
+        from project(':org.eclipse.fx.drift.java11').sourceSets.main.output
+    }
+
+    // manual header
+    manifest {
+        attributes(
+                "Manifest-Version": "1.0",
+                'Bundle-ManifestVersion': '2',
+                'Bundle-SymbolicName': 'org.eclipse.fx.drift',
+                'Bundle-Version': "${Versioning.bundleVersion}",
+                'Bundle-License': 'https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.txt',
+                "Multi-Release": true,
+                'Export-Package': "org.eclipse.fx.drift;version=\"${Versioning.version}\",org.eclipse.fx.drift.impl;version=\"${Versioning.version}\",org.eclipse.fx.drift.util;version=\"${Versioning.version}\"",
+                'Import-Package': "org.osgi.framework,org.osgi.framework.wiring",
+                'Private-Package': 'org.eclipse.fx.drift.internal',
+                'Bundle-ActivationPolicy': 'lazy',
+                'Bundle-Activator': 'org.eclipse.fx.drift.internal.OSGiActivator',
+                'Bundle-NativeCode': 'native/driftfx.dll;osname=Win32;processor=x86-64,native/libdriftfx.so;osname=Linux;processor=x86-64,native/libdriftfx.dylib;osname=MacOSX;processor=x86-64,native/libdriftfx.dylib;osname=MacOSX;processor=aarch64',
+                'Drift-Version': "$Versioning.version",
+                'Drift-Qualifier': "$Versioning.qualifier",
+                'Drift-Timestamp': "$Versioning.timestamp",
+                'Drift-SHA': "$Versioning.gitSHA"
+        )
+    }
+}
+buildMultireleaseJar.group = "DriftFX"
+buildMultireleaseJar.description = "builds the Multi-Release JAR of DriftFX. This is the main artifact."
+
+task buildMultireleaseSourcesJar(type: Jar) {
+	archiveBaseName = 'org.eclipse.fx.drift'
+	archiveVersion = ''
+	archiveClassifier = 'sources'
+	
+	from( project(':org.eclipse.fx.drift').sourceSets.main.allSource ) {
+		exclude 'native'
+        exclude 'org/eclipse/fx/drift/DriftFXSurface.java'
+        exclude 'org/eclipse/fx/drift/internal/DriftUtil.java'
+	}
+	
+	from project(':org.eclipse.fx.drift.java8').sourceSets.main.allSource
+	
+	into('META-INF/versions/11') {
+		from project(':org.eclipse.fx.drift.java11').sourceSets.main.allSource
+	}
+	
+	manifest {
+		attributes(
+                "Manifest-Version": "1.0",
+                "Eclipse-SourceBundle": "org.eclipse.fx.drift;version=\"${Versioning.bundleVersion}\"",
+                'Bundle-ManifestVersion': '2',
+                'Bundle-SymbolicName': 'org.eclipse.fx.drift',
+                'Bundle-Version': "${Versioning.bundleVersion}",
+                'Bundle-License': 'https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.txt',
+                "Multi-Release": true,
+                'Export-Package': "org.eclipse.fx.drift;version=\"${Versioning.version}\",org.eclipse.fx.drift.impl;version=\"${Versioning.version}\",org.eclipse.fx.drift.util;version=\"${Versioning.version}\"",
+                'Import-Package': "org.osgi.framework,org.osgi.framework.wiring",
+                'Private-Package': 'org.eclipse.fx.drift.internal',
+                'Bundle-ActivationPolicy': 'lazy',
+                'Bundle-Activator': 'org.eclipse.fx.drift.internal.OSGiActivator',
+                'Bundle-NativeCode': 'native/driftfx.dll;osname=Win32;processor=x86-64,native/libdriftfx.so;osname=Linux;processor=x86-64,native/libdriftfx.dylib;osname=MacOSX;processor=x86-64',
+                'Drift-Version': "$Versioning.version",
+                'Drift-Qualifier': "$Versioning.qualifier",
+                'Drift-Timestamp': "$Versioning.timestamp",
+                'Drift-SHA': "$Versioning.gitSHA"
+		)
+	}
+}
+buildMultireleaseSourcesJar.group = "DriftFX"
+buildMultireleaseSourcesJar.description = "builds the Sources JAR"
+
+task downloadGithubArtifact {
+    outputs.files(
+        "$buildDir/downloaded/github-artifacts.zip",
+        "$buildDir/downloaded/native-repo.zip")
+    doLast {
+        def runId = System.getenv('GITHUB_RUN_ID')
+        def runArtifacts = github.getArtifacts(runId)
+
+        def artifactUnsigned = runArtifacts.artifacts.find { it.name == 'artifact-unsigned' }
+        github.downloadArtifact(artifactUnsigned.archive_download_url, "$buildDir/downloaded/github-artifacts.zip")
+        
+        def artifactNativeRepo = runArtifacts.artifacts.find { it.name == 'native-repo'}
+        github.downloadArtifact(artifactNativeRepo.archive_download_url, "$buildDir/downloaded/native-repo.zip")
+    }
+}
+downloadGithubArtifact.group = "DriftFX"
+downloadGithubArtifact.description = "downloads the github pipeline artificats for a specific GITHUB_RUN_ID (set in env)"
+
+task askGithub {
+    doLast {
+        def runId = System.getenv('GITHUB_RUN_ID')
+        def runArtifacts = github.getArtifacts(runId)
+        println runArtifacts
+        println '---'
+        println groovy.json.JsonOutput.toJson(runArtifacts)
+    }
+}
+askGithub.group = "DriftFX"
+askGithub.description = "outputs information to a specific github run using the GITHUB_RUN_ID (set in env)"
+
+task unzipGithubArtifact(type: Copy) {
+    dependsOn downloadGithubArtifact
+    from {
+        zipTree("$buildDir/downloaded/github-artifacts.zip")
+    }
+    into "$buildDir/unsigned"
+}
+unzipGithubArtifact.group = "DriftFX"
+unzipGithubArtifact.description = "unzips the downloaded github artifacts"
+
+task unzipNativeRepo(type: Copy) {
+    dependsOn downloadGithubArtifact
+    inputs.files("$buildDir/downloaded/native-repo.zip")
+    from {
+        zipTree("$buildDir/downloaded/native-repo.zip")
+    }
+    into "$buildDir/native-repo"
+}
+unzipNativeRepo.group = "DriftFX"
+unzipNativeRepo.description = "unzips native-repo"
+
+task signJarFiles() {
+	group "DriftFX"
+	description "signs the Jar using the eclipse jar signing service"
+    dependsOn unzipGithubArtifact
+    
+    outputs.dir("$buildDir/signed").withPropertyName("outputDir")
+    
+    doLast {
+    	
+        def sourceFile = "$buildDir/unsigned/org.eclipse.fx.drift.jar"
+        def targetFile = "$buildDir/signed/org.eclipse.fx.drift.jar"
+        mkdir "$buildDir/signed"
+        def stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'curl', '-sS', '-o', targetFile, '-F', "file=@$sourceFile", 'https://cbi.eclipse.org/jarsigner/sign'
+            standardOutput = stdout
+        }
+        
+        copy {
+        	from "$buildDir/libs/org.eclipse.fx.drift-sources.jar"
+        	into "$buildDir/signed/"
+        }
+    }
+}
+
+platform {
+ 
+  eclipseMirror = 'http://philippkatz.de/eclipse-p2-minimal.tar.gz'
+
+    featureId = 'org.eclipse.fx.drift.feature'
+    featureName = 'DriftFX'
+    featureVersion = Versioning.bundleVersion
+    featureProvider = "BestSolution"
+
+    categoryId = 'org.eclipse.fx.drift'
+    categoryName = 'e(fx)clipse Drift'
+
+    fetchSources = true
+    useBndHashQualifiers = false
+    useFeatureHashQualifiers = false
+    //generatePlatformFeature = false
+
+    bundle file(getMultireleaseJarPath()) 
+    //bundle buildMultireleaseSourcesJar.outputs.files
+    
+/*    bundle file("$buildDir/downloaded/org.eclipse.fx.drift.jar"), {
+        bnd {
+            version = '2.5.0'
+            symbolicName = 'the.super.drift'
+        }
+    }*/
+
+/*
+    feature (id: 'org.eclipse.fx.drift.feature', name: 'DriftFX Runtime', version: '') {
+        plugin file("$buildDir/downloaded/org.eclipse.fx.drift.jar")
+    }
+*/
+}
+
+ext.github = new GithubAPI(githubOrga, githubRepo, System.getenv('GITHUB_ACCESS_TOKEN'))
+
+import okhttp3.*
+ext.client = new OkHttpClient()
+
+abstract class ExecuteRemoteJenkins extends DefaultTask {
+
+  @Internal
+  def client = new OkHttpClient()
+
+  @Input
+  abstract Property<String> getJobUrl()
+
+  @Input
+  abstract MapProperty<String, String> getBuildParameters()
+
+  @TaskAction
+  def execute() {
+    def queueUri = triggerBuild()
+    println "Job queued."
+
+    def jobUri
+    while (true) {
+      Thread.sleep(5000L)
+      try {
+        def queueData = queryQueue(queueUri)
+
+        if (queueData.why) {
+          println "Jenkings Queue: $queueData.why"
+        } 
+
+        if (queueData.executable) {
+          jobUri = queueData.executable.url
+          break
+        }
+
+      } catch (java.net.SocketTimeoutException e) {
+        println "Jenkins Queue: $e.message"
+      }
+
+    }
+    println "Job started."
+
+    def info
+
+  	while (true) {
+      Thread.sleep(5000L)
+      try {
+        info = queryBuildInfo(jobUri);
+        println "Jenkins Build: $info.duration / $info.estimatedDuration ( duration / est. duration )"
+        if (info.building == false) {
+          break;
+        }
+      } catch (java.net.SocketTimeoutException e) {
+        println "Jenkins Build: $e.message"
+      }
+    }
+
+    println "Jenkins Job $info.id finished; result=$info.result"
+
+    assert info.result == "SUCCESS"
+  }
+
+  def computeTriggerUrl() {
+    def toParams = {
+      it.collect { "$it.key=$it.value" } join "&"
+    }
+    return jobUrl.get() + "/buildWithParameters?" + toParams(buildParameters.get())
+  }
+
+  def queryQueue(uri) {
+    def req = new Request.Builder().url(uri + "api/json?now=${System.currentTimeMillis()}").build()
+    def res = client.newCall(req).execute()
+    assert res.code == 200
+    return new groovy.json.JsonSlurper().parseText(res.body.string())
+  }
+
+  def queryBuildInfo(jobUri) {
+    def req = new Request.Builder().url(jobUri + "api/json?now=${System.currentTimeMillis()}").build()
+    def res = client.newCall(req).execute()
+    assert res.code == 200
+    return new groovy.json.JsonSlurper().parseText(res.body.string());
+  }
+
+  def triggerBuild() {
+    def req = new Request.Builder().url(computeTriggerUrl()).build()
+    def res = client.newCall(req).execute()
+    assert res.code == 201
+    def result = res.header("location")
+    res.close()
+    return result
+  }
+
+}
+
+task testIt(type: ExecuteRemoteJenkins) {
+  def jenkinsToken = System.getenv("JENKINS_ACCESS_TOKEN")
+  def runId = System.getenv('GITHUB_RUN_ID')
+  def githubToken = System.getenv('GH_ACCESS_TOKEN')
+  def githubRef = System.getenv('GITHUB_REF')
+
+  if (jenkinsToken == null) jenkinsToken = 'asdf'
+  if (runId == null) runId = 'b'
+  if (githubToken == null) githubToken = 'c'
+  if (githubRef == null) githubRef = 'd'
+
+  jobUrl = "https://ci.eclipse.org/efxclipse/job/test_gradle"
+  buildParameters = [
+    token: jenkinsToken,
+    GITHUB_RUN_ID: runId,
+    GITHUB_ACCESS_TOKEN:  githubToken,
+    GIT_SHA: Versioning.gitSHA,
+    GITHUB_REF: githubRef
+  ]
+
+}
+
+task notifyJenkins(type: ExecuteRemoteJenkins) {
+  def jenkinsToken = System.getenv("JENKINS_ACCESS_TOKEN")
+  def runId = System.getenv('BUILD_RUN_ID')
+  def githubToken = System.getenv('GITHUB_TOKEN')
+  def githubRef = System.getenv('GITHUB_REF')
+  def headBranch = System.getenv('HEAD_BRANCH')
+
+  jobUrl = "https://ci.eclipse.org/efxclipse/job/efxclipse_drift_build"
+  buildParameters = [
+    token: jenkinsToken,
+    GITHUB_RUN_ID: runId,
+    GITHUB_ACCESS_TOKEN:  githubToken,
+    GIT_SHA: Versioning.gitSHA,
+    GITHUB_REF: githubRef,
+    GITHUB_REF_NAME: headBranch
+  ]
+}
+
+task notifyJenkins2() {
+    doLast {
+        def jenkinsToken = System.getenv("JENKINS_ACCESS_TOKEN")
+        def runId = System.getenv('GITHUB_RUN_ID')
+        def githubToken = System.getenv('GH_ACCESS_TOKEN')
+        def githubRef = System.getenv('GITHUB_REF')
+
+        def req = new Request.Builder()
+        .url("https://ci.eclipse.org/efxclipse/job/efxclipse_drift_build/buildWithParameters?token=$jenkinsToken&GITHUB_ACCESS_TOKEN=$githubToken&GITHUB_RUN_ID=$runId&GIT_SHA=${Versioning.gitSHA}&GITHUB_REF=$githubRef")
+        .build()
+        def res = client.newCall(req).execute()
+
+        assert res.code == 201
+        println "triggered jenkins build"
+    }
+}
+notifyJenkins.group = "DriftFX"
+notifyJenkins.description = "Notifies the eclipse build system of a successful github run"
+
+
+ext {
+    UpdateSiteReleaseBase = "efxclipse/driftfx/releases"
+    UpdateSiteNightlyBase = "efxclipse/driftfx/nightly"
+    UpdateSitePath = Versioning.releaseMode ? "$UpdateSiteReleaseBase/$Versioning.version" : "$UpdateSiteNightlyBase/$Versioning.qualifier"
+}
+
+task deployUpdateSite() {
+    dependsOn updateSite
+    doLast {
+        def remoteHost = "genie.efxclipse@projects-storage.eclipse.org"
+        def remoteDirectory = "/home/data/httpd/download.eclipse.org"
+
+        def target = "$remoteDirectory/$UpdateSitePath"
+        println "Deploying update site to '$target'"
+
+        // create update site directory
+        def stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'ssh', remoteHost, 'mkdir', '-p', target
+            standardOutput = stdout
+        }
+        println stdout.toString().trim()
+
+        // copy update site
+        stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'scp', '-r', 'build/updatesite/features', 'build/updatesite/plugins', 'build/updatesite/content.jar', 'build/updatesite/artifacts.jar', "$remoteHost:$target"
+            standardOutput = stdout
+        }
+        println stdout.toString().trim()
+    }
+}
+deployUpdateSite.group = "DriftFX"
+deployUpdateSite.description = "Deploys the update site to download.eclipse.org."
+
+
+/*
+task updateCompositeUpdateSite() {
+
+    doLast {
+        def remoteHost = "genie.efxclipse@projects-storage.eclipse.org"
+        def compositeDirectory = "/home/data/httpd/download.eclipse.org"
+        def target = "${compositeDirectory}/${UpdateSiteBaseNightly}"
+        def stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'ssh', "$remoteHost", "ls", "$target"
+            standardOutput = stdout
+        }
+
+
+    }
+}
+*/
+
+task createDistribution(type: Zip) {
+    dependsOn updateSiteZip
+    //dependsOn unzipNativeRepo
+
+	from file('LICENSE')
+
+    from file("$buildDir/updatesite.zip")
+
+    into('driftcpp') {
+        from "native-driftcpp/src/main/public"
+	from "native-driftcpp/src/main/cpp"
+    }
+
+//    into('libs/debug') {
+//        from fileTree("$buildDir/native-repo/org/eclipse/fx/drift/driftcpp_debug_windows") {
+//            include "**/*${Versioning.fullVersion}.dll"
+//            include "*/*${Versioning.fullVersion}.lib"
+//            eachFile { path = "libs/debug/$name" } // flatten into libs
+//            includeEmptyDirs = false
+//        }
+//        from fileTree("$buildDir/native-repo/org/eclipse/fx/drift/driftcpp_debug_linux") {
+//            include "**/*${Versioning.fullVersion}.so"
+//            eachFile { path = "libs/debug/$name" } // flatten into libs
+//            includeEmptyDirs = false
+//        }
+//        from fileTree("$buildDir/native-repo/org/eclipse/fx/drift/driftcpp_debug_macos") {
+//            include "**/*${Versioning.fullVersion}.dylib"
+//            eachFile { path = "libs/debug/$name" } // flatten into libs
+//            includeEmptyDirs = false
+//        }
+//    }
+
+//    into('libs/release') {
+//        from fileTree("$buildDir/native-repo/org/eclipse/fx/drift/driftcpp_release_windows") {
+//            include "**/*${Versioning.fullVersion}.dll"
+//            include "*/*${Versioning.fullVersion}.lib"
+//            eachFile { path = "libs/release/$name" } // flatten into libs
+//            includeEmptyDirs = false
+//        }
+//        from fileTree("$buildDir/native-repo/org/eclipse/fx/drift/driftcpp_release_linux") {
+//            include "**/*${Versioning.fullVersion}.so"
+//            eachFile { path = "libs/release/$name" } // flatten into libs
+//            includeEmptyDirs = false
+//        }
+//        from fileTree("$buildDir/native-repo/org/eclipse/fx/drift/driftcpp_release_macos") {
+//            include "**/*${Versioning.fullVersion}.dylib"
+//            eachFile { path = "libs/release/$name" } // flatten into libs
+//            includeEmptyDirs = false
+//        }
+//    }
+
+    archiveBaseName = "dist"
+    archiveVersion = Versioning.fullVersion
+
+}
+createDistribution.group = "DriftFX"
+createDistribution.description = "Creates the dist.zip to be attached to a github release."
+
+
+task publishGithubRelease() {
+    doLast {
+        if (Versioning.releaseMode) {
+
+            def release = github.createRelease(Versioning.releaseTag, Versioning.gitSHA, "DriftFX $Versioning.version", """
+            
+            ### p2 Update Site
+            https://download.eclipse.org/$UpdateSitePath
+            ### Maven
+            Repo: https://repo.eclipse.org/content/groups/efxclipse   
+            Group Id: `org.eclipse.fx`    
+            Artifact Id: `org.eclipse.fx.drift`   
+            Version: `$Versioning.version`   
+
+            """.stripIndent().trim(), Versioning.isPreRelease)
+
+            def releaseId = release.id
+            println "Created Release $releaseId"
+
+            def uploadUrl = release.upload_url
+
+            def distZip = file("build/distributions/dist-${Versioning.version}.zip")
+            def r = github.uploadAsset(release.upload_url, 
+                "application/zip", distZip,
+                "driftfx-dist-${Versioning.version}.zip",
+                null)
+
+            def modify = github.modifyRelease(releaseId, Versioning.releaseTag, false)
+            println new groovy.json.JsonBuilder(modify).toPrettyString()
+
+        } else {
+// no github release for nightly builds
+/*
+          def release = github.createRelease(Versioning.timestamp, Versioning.gitSHA, "DriftFX Nightly $Versioning.qualifier", """
+            This is a nightly build. (The Version number 999.0.0 indicates nightly builds)
+
+            ### p2 Update Site
+            https://download.eclipse.org/$UpdateSitePath
+            ### Maven
+            Repo: https://repo.eclipse.org/content/groups/efxclipse 
+            Group Id: `org.eclipse.fx`    
+            Artifact Id: `org.eclipse.fx.drift`   
+            Version: `$Versioning.version-SNAPSHOT`   
+
+            """.stripIndent().trim(), true)
+            println new groovy.json.JsonBuilder(release).toPrettyString()
+            def releaseId = release.id
+            println "Created Nightly Release $releaseId"
+
+            def uploadUrl = release.upload_url
+
+            def distZip = file("build/distributions/dist-${Versioning.fullVersion}.zip")
+            def r = github.uploadAsset(release.upload_url, 
+                "application/zip", distZip,
+                "driftfx-dist-${Versioning.fullVersion}.zip",
+                null)
+
+            println "going to modify release..."
+            
+            def modify = github.modifyRelease(releaseId, Versioning.timestamp, false)
+            println new groovy.json.JsonBuilder(modify).toPrettyString()
+
+*/
+        }
+
+    }
+}
+publishGithubRelease.group = "DriftFX"
+publishGithubRelease.description = "Publishes a release to github. Only works in releaseMode (The checked out state is on a release tag)"
+
+task undoRelease() {
+    doLast {
+         def modify = github.modifyRelease("${System.getenv("RELID")}", true)
+         println new groovy.json.JsonBuilder(modify).toPrettyString()
+    }
+}
+undoRelease.group = "DriftFX"
+undoRelease.description = "Revokes a github release by settings its draft flag to true. The release is specified by setting RELID in env."
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = 'org.eclipse.fx'
+            artifactId = 'org.eclipse.fx.drift'
+            version = "${Versioning.version}${Versioning.releaseMode ? '' : '-SNAPSHOT'}"
+            
+            pom {
+            	name = 'DriftFX'
+            	url = 'https://github.com/eclipse-fx/efxclipse-drift'
+            	licenses {
+            		license {
+            			name = 'Eclipse Public License - v 2.0'
+            			url = 'https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.txt'
+            		}
+            	}
+            }       
+            artifact(getMultireleaseJarPath()) {
+                extension 'jar'
+            }
+            artifact buildMultireleaseSourcesJar
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = "https://maven.pkg.github.com/$githubOrga/$githubRepo"
+            credentials {
+                username = "redrezo"
+                password = "${System.getenv('GITHUB_ACCESS_TOKEN')}"
+            }
+        }
+
+		maven {
+			name = "MavenInProject"
+			url = "./maven-repo"
+		}
+
+        if (project.hasProperty('eclipseRepoUsername')) {
+            maven {
+                name = 'EclipseNexus'
+                def releasesUrl = 'https://repo.eclipse.org/content/repositories/efxclipse-releases'
+                def snapshotsUrl = 'https://repo.eclipse.org/content/repositories/efxclipse-snapshots'
+                url = Versioning.releaseMode ? releasesUrl : snapshotsUrl
+                credentials {
+                    username eclipseRepoUsername
+                    password eclipseRepoPassword
+                }
+                authentication {
+                    basic(BasicAuthentication)
+                }
+            }
+        }
+    }
+}
+
+
+
+

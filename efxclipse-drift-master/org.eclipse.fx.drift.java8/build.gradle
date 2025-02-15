@@ -1,0 +1,55 @@
+/* ******************************************************************************
+ * Copyright (c) 2019, 2020 BestSolution.at and others.
+ * All rights reserved. This program and the accompanying materials 
+ * are made available under the terms of the Eclipse Public License 2.0 
+ * which is available at http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ * 
+ * Contributors:
+ *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
+ * ******************************************************************************/
+plugins {
+    id 'java'
+    id 'eclipse'
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_1_8
+	targetCompatibility = JavaVersion.VERSION_1_8
+}
+
+
+eclipse {
+	project {
+	
+	}
+	classpath {
+		containers 'org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8'
+		
+		file {
+			beforeMerged { classpath -> 
+				
+			}
+		
+			whenMerged { classpath -> 
+				// this is a dirty workaround for now to get rid of the Java 11 Container
+				classpath.entries.removeAll { it.kind == 'con' && it.path.contains('JavaSE-11') }
+				println new groovy.json.JsonBuilder([]).toPrettyString()
+			}
+		}
+	}
+}
+
+
+dependencies {
+    implementation project(':org.eclipse.fx.drift')
+}
+
+compileJava {
+    sourceCompatibility = '1.8'
+    targetCompatibility = '1.8'
+	options.encoding = 'UTF-8'
+	options.fork = true
+	options.forkOptions.executable = getJava8()    
+}

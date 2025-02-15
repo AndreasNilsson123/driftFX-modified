@@ -1,0 +1,102 @@
+/* ******************************************************************************
+ * Copyright (c) 2019, 2020 BestSolution.at and others.
+ * All rights reserved. This program and the accompanying materials 
+ * are made available under the terms of the Eclipse Public License 2.0 
+ * which is available at http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ * 
+ * Contributors:
+ *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
+ * ******************************************************************************/
+plugins {
+  id 'cpp-application'
+  id 'maven-publish'
+  id 'visual-studio'
+  id 'xcode'
+}
+
+  group = 'org.eclipse.fx.drift'
+  version = Versioning.fullVersion
+
+application {
+
+  baseName = 'driftcpp'
+
+   // linkage =  [ Linkage.STATIC ]
+    
+    targetMachines = [
+      machines.linux.x86_64,
+      machines.windows.x86_64,
+      machines.macOS.x86_64
+    ]
+    
+    privateHeaders {
+    	from file('src/main/headers')
+    	from file(getJNIPlatformIncludeDir())
+    	from file(getJNIIncludeDir())
+        from file('src/main/public')
+    }
+    
+    
+    
+    binaries.configureEach {
+      def compileTask = compileTask.get()
+//      def linkTask = linkTask.get()
+      
+//      addJNIIncludes(compileTask)
+
+      if (Os.isFamily(Os.FAMILY_MAC)) {
+//        linkTask.linkerArgs.addAll('-install_name', '@rpath/libdriftfx.dylib')
+      }
+    }
+}
+
+import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.nativeplatform.platform.OperatingSystem
+import org.gradle.internal.jvm.Jvm
+
+def getJNIPlatformDir() {
+  if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+    'win32'
+  } else if (Os.isFamily(Os.FAMILY_MAC)) {
+    'darwin'
+  } else if (Os.isFamily(Os.FAMILY_UNIX)) {
+    'linux'
+  }
+}
+
+def getJNIIncludeDir() {
+        Jvm.current().javaHome.toPath().resolve('include')
+}
+def getJNIPlatformIncludeDir() {
+        getJNIIncludeDir().resolve(getJNIPlatformDir())
+}  
+
+tasks.withType(CppCompile).configureEach {
+  macros.put("BUILDING_DLL", null)
+  compilerArgs.add '-std=c++11'
+}
+
+publishing {
+    repositories {
+        maven {
+          url = "../native-repo"
+        }
+    }
+}
+
+/*
+publishing {
+    repositories {
+        maven {
+          name = "GitHubPackages"
+          url = uri("https://maven.pkg.github.com/${System.getenv('GITHUB_REPOSITORY')}")
+          credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+          }
+        }
+    }
+}
+*/
