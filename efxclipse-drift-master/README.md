@@ -1,3 +1,13 @@
+# Modification Notice
+
+This repository have made minor changes, by excluding the information printout statements during initialization of OpenGL
+context, for the [https://github.com/eclipse-efx/efxclipse-drift](https://github.com/eclipse-efx/efxclipse-drift) project which is distributed under the Eclipse 
+Public Licenese 2.0. A note has been left in the altered files
+
+#### Affected Files
+ * src/main/cpp/driftgl/win32/DriftGL_wgl.cpp
+
+
 # DriftFX - The Direct Rendering Infrastructure for JavaFX
 
 DriftFX allows you to render any OpenGL content directly into JavaFX nodes.  

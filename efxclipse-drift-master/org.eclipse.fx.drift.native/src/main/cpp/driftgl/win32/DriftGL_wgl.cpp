@@ -9,6 +9,11 @@
  * Contributors:
  *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
  * ******************************************************************************/
+/*
+ * Changes to comment out OpenGL initialization messages
+ *      Andreas Nilsson
+*/
+
 
 #ifdef DRIFTGL_WGL
 #include "DriftGL.h"
@@ -48,7 +53,7 @@ namespace driftgl {
 
 	void logError(std::string message) {
 		// TODO send message to java based logger
-		std::cerr << "[C] " << message << std::endl;
+		// std::cerr << "[C] " << message << std::endl;
 	}
 
 	void registerContext(HGLRC hglrc, Context* context) {
