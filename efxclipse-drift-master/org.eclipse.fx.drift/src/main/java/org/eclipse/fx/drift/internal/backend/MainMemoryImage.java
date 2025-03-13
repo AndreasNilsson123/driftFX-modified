@@ -9,6 +9,12 @@
  * Contributors:
  *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
  * ******************************************************************************/
+/*
+ * Changes with presentation of MainMemory image to bind PBO to avoid CPU-GPU stall on call to glGetTexture.
+ *      Andreas Nilsson
+ */
+
+
 package org.eclipse.fx.drift.internal.backend;
 
 import static org.eclipse.fx.drift.internal.GL.GL_BGRA;
@@ -48,7 +54,8 @@ public class MainMemoryImage implements Image {
 	
 	private int number;
 	private Vec2i size;
-	
+	private int persistentPBO;
+
 	private MainMemoryImageData data;
 	
 	int glTexture;
@@ -80,14 +87,24 @@ public class MainMemoryImage implements Image {
 		
 		memSize = size.x * size.y * 4;
 		memPointer = malloc(memSize);
-		
-		LOGGER.debug(() -> "*allocated " + number + " 0x" + Long.toHexString(memPointer) + "("+size.x+"x"+size.y+": " + memSize + "B)");
-		this.data =  new MainMemoryImageData(number, size, memPointer, memSize);
+
+		// Create a persistent PBO for asynchronous readback.
+		persistentPBO = glGenBuffer();
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, persistentPBO);
+		glBufferData(GL_PIXEL_PACK_BUFFER, memSize, 0, GL_STATIC_READ);
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+		LOGGER.debug(() -> "*allocated " + number + " 0x" + Long.toHexString(memPointer)
+				+ " (" + size.x + "x" + size.y + ": " + memSize + "B)");
+		this.data = new MainMemoryImageData(number, size, memPointer, memSize);
 	}
 
 	@Override
 	public void release() {
+		// Delete the texture.
 		glDeleteTexture(glTexture);
+		// Delete the persistent PBO.
+		glDeleteBuffer(persistentPBO);
+		persistentPBO = 0;
 		LOGGER.debug(() -> "*release " + glTexture + " 0x" + Long.toHexString(memPointer));
 		free(memPointer);
 	}
@@ -100,40 +117,34 @@ public class MainMemoryImage implements Image {
 	@Override
 	public void onPresent() {
 		synchronized (data) {
-			downloadToMemorySimple(glTexture, memPointer);
+			downloadToMemoryUsingPBO(glTexture, memSize, memPointer);
 		}
 	}
 
-	private void downloadToMemorySimple(int tex, long pPixels) {
-		
-//		int format = GL_RGBA; // TODO need GL_BGRA on windows
-//		int format = GL_BGRA;
-		
-		// we change the colors here for directx upload
-		int format = Prism.isD3D() ? GL_BGRA : GL_RGBA;
-		
-		glBindTexture(GL_TEXTURE_2D, glTexture);
-		glGetTexImage(GL_TEXTURE_2D, 0, format, GL_UNSIGNED_INT_8_8_8_8_REV, memPointer);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		LOGGER.trace(() -> "*downloaded " + tex + " => 0x" + Long.toHexString(memPointer));
-	}
-	
-	private void downloadToMemoryBuf(int tex, int size, long pPixels) {
-		int buf = glGenBuffer();
-		glBindBuffer(GL_PIXEL_PACK_BUFFER, buf);
-		glBufferData(GL_PIXEL_PACK_BUFFER, size, 0, GL_STATIC_READ);
-		int format = GL_RGBA; // TODO need GL_BGRA on windows
+	private void downloadToMemoryUsingPBO(int tex, int size, long pPixels) {
+		// Bind the persistent PBO.
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, persistentPBO);
+
+		// Bind the texture and initiate asynchronous readback into the PBO.
 		glBindTexture(GL_TEXTURE_2D, tex);
+
+		int format = Prism.isD3D() ? GL_BGRA : GL_RGBA;
 		glGetTexImage(GL_TEXTURE_2D, 0, format, GL_UNSIGNED_INT_8_8_8_8_REV, 0);
 		glBindTexture(GL_TEXTURE_2D, 0);
-		
+
+		// Map the buffer so that we can copy its data to system memory.
 		long glBuf = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
-		memcpy(pPixels, glBuf, size);
-		glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+		if (glBuf != 0L) {
+			memcpy(pPixels, glBuf, size);
+			glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+		} else {
+			LOGGER.warn(() -> "Failed to map persistent PBO for readback.");
+		}
+
+		// Unbind the PBO.
 		glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-		glDeleteBuffer(buf);
 	}
-	
+
 	@Override
 	public int getGLTexture() {
 		return glTexture;

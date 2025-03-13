@@ -5,7 +5,8 @@ context, for the [https://github.com/eclipse-efx/efxclipse-drift](https://github
 Public Licenese 2.0. A note has been left in the altered files
 
 #### Affected Files
- * src/main/cpp/driftgl/win32/DriftGL_wgl.cpp
+ * native/src/main/cpp/driftgl/win32/DriftGL_wgl.cpp
+ * efxclipse-drift-master/org.eclipse.fx.drift/src/main/java/org/eclipse/fx/drift/internal/backend/MainMemoryImage.java
 
 
 # DriftFX - The Direct Rendering Infrastructure for JavaFX
