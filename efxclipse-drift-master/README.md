@@ -1,13 +1,18 @@
 # Modification Notice
 
-This repository have made minor changes, by excluding the information printout statements during initialization of OpenGL
-context, for the [https://github.com/eclipse-efx/efxclipse-drift](https://github.com/eclipse-efx/efxclipse-drift) project which is distributed under the Eclipse 
+This repository have made changes for the [https://github.com/eclipse-efx/efxclipse-drift](https://github.com/eclipse-efx/efxclipse-drift) project which is distributed under the Eclipse 
 Public Licenese 2.0. A note has been left in the altered files
 
 #### Affected Files
  * native/src/main/cpp/driftgl/win32/DriftGL_wgl.cpp
  * efxclipse-drift-master/org.eclipse.fx.drift/src/main/java/org/eclipse/fx/drift/internal/backend/MainMemoryImage.java
+ * efxclipse-drift-master/org.eclipse.fx.drift/src/main/java/org/eclipse/fx/drift/internal/RendererImpl
 
+#### Changes
+ * Removed Printout statements during OpenGL initialization when running on windows
+ * Improved Rendering speed when using MainMemory transfer type by reducing GPU - CPU stalls by bind PBO before glTexture calls
+ * Removed static map in RendererImpl due to it holding a strong reference to the Rendering surface causing memory leaks
+ * Added the possibility to create a jar which doesn't include the Java 8 which previously caused issues when trying to run from deployed versions with the compiled jar
 
 # DriftFX - The Direct Rendering Infrastructure for JavaFX
 

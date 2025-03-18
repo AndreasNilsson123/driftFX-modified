@@ -9,10 +9,12 @@
  * Contributors:
  *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
  * ******************************************************************************/
+/*
+ * Removed static map holding renders due to memory leaks with this approach
+ *      Andreas Nilsson
+ */
 package org.eclipse.fx.drift.internal;
 
-import java.util.HashMap;
-import java.util.Map;
 
 import org.eclipse.fx.drift.DriftFXSurface;
 import org.eclipse.fx.drift.Renderer;
@@ -29,11 +31,11 @@ import org.eclipse.fx.drift.internal.transport.VMTransport;
 public class RendererImpl implements Renderer {
 	private static final DriftLogger LOGGER = DriftFX.createLogger(RendererImpl.class);
 	
-	private static Map<DriftFXSurface, Renderer> renderers = new HashMap<>();
+	//private static Map<DriftFXSurface, Renderer> renderers = new HashMap<>();
 	
 	public static Renderer getRenderer(DriftFXSurface surface) {
-		return renderers.computeIfAbsent(surface, surf -> new RendererImpl(surf));
-		
+		//return renderers.computeIfAbsent(surface, surf -> new RendererImpl(surf));
+		return new RendererImpl(surface);
 	}
 
 	private DriftFXSurface surface;

@@ -192,6 +192,51 @@ task buildMultireleaseSourcesJar(type: Jar) {
 buildMultireleaseSourcesJar.group = "DriftFX"
 buildMultireleaseSourcesJar.description = "builds the Sources JAR"
 
+// Task 1: Extract the base content from the multi-release jar
+task fakeMRExtractBase(type: Copy) {
+    dependsOn buildMultireleaseJar
+    from(zipTree(tasks.buildMultireleaseJar.archiveFile.get().asFile)) {
+    // Exclude all version-specific files from META-INF/versions/**
+        exclude 'META-INF/versions/**'
+    }
+    into "$buildDir/fakeMR"
+}
+
+// Task 2: Overlay the version 11 classes into the temporary directory
+task fakeMROverlayVersion11(type: Copy) {
+    dependsOn fakeMRExtractBase
+    from(zipTree(tasks.buildMultireleaseJar.archiveFile.get().asFile)) {
+        // Include only files from META-INF/versions/11/org/
+        include 'META-INF/versions/11/org/**'
+        // Remove the META-INF/versions/11/ prefix so that the classes land directly in the "org" folder
+        eachFile { details ->
+            details.path = details.path - 'META-INF/versions/11/'
+        }
+        includeEmptyDirs = false
+    }
+    // Copy into the same temporary directory so that they override any base classes
+    into "$buildDir/fakeMR"
+}
+
+// Task 3: Package the temporary directory into a new jar file
+task createJava11PlusJar(type: Jar) {
+    dependsOn fakeMROverlayVersion11
+    from "$buildDir/fakeMR"
+    manifest {
+    // Clear the Multi-Release attribute so that the JDK doesn't treat it as a multi-release jar
+        attributes 'Multi-Release': ''
+    }
+    destinationDirectory = file("$buildDir/java11+")
+    // Set a custom name: base name, version, and classifier
+    archiveBaseName.set("org.eclipse.fx.drift.single")
+    archiveVersion.set("") // omit version number
+    archiveClassifier.set("") // no classifier so the jar name is clean
+}
+
+
+
+
+
 task downloadGithubArtifact {
     outputs.files(
         "$buildDir/downloaded/github-artifacts.zip",

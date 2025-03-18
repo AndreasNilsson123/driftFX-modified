@@ -10,7 +10,7 @@
  *     Christoph Caks <ccaks@bestsolution.at> - initial API and implementation
  * ******************************************************************************/
 /*
- * Changes to comment out OpenGL initialization messages
+ * Changes to prevent OpenGL initialization messages to stdout
  *      Andreas Nilsson
 */
 
@@ -196,10 +196,10 @@ bool wglDXSetResourceShareHandleNV(void* dxObject, HANDLE shareHandle) {
 }
 typedef GLubyte* (*PFNGLGETSTRING) (GLenum name);
 void showContextInfo(std::string name, PFNGLGETSTRING glGetString) {
-	std::cout << "[C] OpenGL Context information \"" << name << "\"" << std::endl;
-	std::cout << "[C]   Version: " << glGetString(GL_VERSION) << std::endl;
-	std::cout << "[C]   Vendor: " << glGetString(GL_VENDOR) << std::endl;
-	std::cout << "[C]   Renderer: " << glGetString(GL_RENDERER) << std::endl;
+	//std::cout << "[C] OpenGL Context information \"" << name << "\"" << std::endl;
+	//std::cout << "[C]   Version: " << glGetString(GL_VERSION) << std::endl;
+	//std::cout << "[C]   Vendor: " << glGetString(GL_VENDOR) << std::endl;
+	//std::cout << "[C]   Renderer: " << glGetString(GL_RENDERER) << std::endl;
 }
 
 PROC doGetProcAddress(LPCSTR name) {
